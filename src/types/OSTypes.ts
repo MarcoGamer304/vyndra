@@ -1,0 +1,1 @@
+export type os = "windows" | "linux" | "mac";
