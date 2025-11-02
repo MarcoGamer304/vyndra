@@ -98,9 +98,15 @@ program
     createPackageJsonTemplate(projectPath, project, "1.0.11");
     createTsConfigTemplate(projectPath, project);
 
-    fs.writeFileSync(path.join(projectPath, ".gitignore"), "node_modules/\ndist/\n.env\n");
+    fs.writeFileSync(
+      path.join(projectPath, ".gitignore"),
+      "node_modules/\ndist/\n.env\n"
+    );
 
-    fs.writeFileSync(path.join(projectPath, "README.md"));
+    fs.writeFileSync(
+      path.join(projectPath, "README.md"),
+      `# ${project}\n\nProyecto creado con **VyndraJS** \n\nEstructura base generada automáticamente.`
+    );
 
     fs.writeFileSync(
       path.join(projectPath, ".env"),
@@ -124,7 +130,9 @@ program
       sub.method(subPath, "user");
     });
 
-    console.log(`Proyecto "${project}" creado correctamente con módulo "user".`);
+    console.log(
+      `Proyecto "${project}" creado correctamente con módulo "user".`
+    );
     console.log(`\n Ejecuta:\n  cd ${project}\n  npm install\n  npm run dev\n`);
   });
 
