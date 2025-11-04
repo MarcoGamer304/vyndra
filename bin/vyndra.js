@@ -11,6 +11,8 @@ import { createIndexTemplate } from "./templates/template.index.ts.js";
 import { createPackageJsonTemplate } from "./templates/template.package.json.js";
 import { createTsConfigTemplate } from "./templates/template.tsconfig.json.js";
 
+const osAllowed = ["windows", "linux", "mac"];
+
 const program = new Command();
 program
   .name("vyndra")
@@ -118,6 +120,7 @@ program
         "MESSAGE_BROKER_AMQP=5672",
         "MESSAGE_BROKER_MANAGEMENT=15672",
         "MESSAGE_BROKER_IMAGE=rabbitmq:3-management",
+        "MESSAGE_BROKER_PROVIDER=rabbitmq",
       ].join("\n")
     );
 
@@ -135,5 +138,18 @@ program
     );
     console.log(`\n Ejecuta:\n  cd ${project}\n  npm install\n  npm run dev\n`);
   });
+
+  program
+    .command("create:broker <os>")
+    .description("Crea e inicia el contenedor broker, <os> 'windows' | 'linux' | 'mac'")
+    .action((osType) => {
+      if (osAllowed.includes(osType)) {
+        startQueueContainer(osType);
+      } else {
+        console.error(
+          `Sistema operativo no válido. Use: ${osAllowed.join(", ")}`
+        );
+      }
+    });
 
 program.parse(process.argv);
