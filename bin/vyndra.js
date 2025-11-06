@@ -10,6 +10,7 @@ import { createListenerTemplate } from "./templates/template.listener.js";
 import { createIndexTemplate } from "./templates/template.index.ts.js";
 import { createPackageJsonTemplate } from "./templates/template.package.json.js";
 import { createTsConfigTemplate } from "./templates/template.tsconfig.json.js";
+import { startQueueContainer } from "../dist/queue/docker.js";
 
 const osAllowed = ["windows", "linux", "mac"];
 
@@ -97,7 +98,7 @@ program
     ensureDir(modulesPath);
 
     createIndexTemplate(srcPath, project);
-    createPackageJsonTemplate(projectPath, project, "1.0.11");
+    createPackageJsonTemplate(projectPath, project, "1.0.13");
     createTsConfigTemplate(projectPath, project);
 
     fs.writeFileSync(

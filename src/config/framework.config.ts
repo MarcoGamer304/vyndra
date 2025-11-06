@@ -20,10 +20,10 @@ export const FrameworkConfig = {
     },
     ports: {
       get amqp() {
-        return Number(process.env.MESSAGE_BROKER_AMQP) ?? 5672;
+        return process.env.MESSAGE_BROKER_AMQP ?? 5672;
       },
       get management() {
-        return Number(process.env.MESSAGE_BROKER_MANAGEMENT) ?? 15672;
+        return process.env.MESSAGE_BROKER_MANAGEMENT ?? 15672;
       },
     },
     connection: {

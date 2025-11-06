@@ -1,20 +1,19 @@
 import "reflect-metadata";
-import { IdOptions } from "../types/idTypes.js";
 
-export function Id(options?: IdOptions) {
-  return function (target: any, propertyKey: string) {
-    const columnName = options?.name || propertyKey;
-
-    Reflect.defineMetadata("id", columnName, target.constructor);
-
+export function Id() {
+  return function (target: any, propertyKey: string | symbol) {
+    Reflect.defineMetadata("id", propertyKey, target.constructor);
+    
     const columns = Reflect.getMetadata("columns", target.constructor) || [];
-
-    columns.push({
-      name: columnName,
-      propertyKey,
-      options: { type: "serial" },
+    const type = Reflect.getMetadata("design:type", target, propertyKey);
+    
+    columns.push({ 
+      name: propertyKey as string, 
+      options: {},
+      type: type?.name || 'unknown',
+      isId: true
     });
-
+    
     Reflect.defineMetadata("columns", columns, target.constructor);
   };
 }

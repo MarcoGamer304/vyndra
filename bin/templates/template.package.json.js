@@ -7,7 +7,7 @@ const filePath = path.join(dirPath,"package.json");
 
 fs.writeFileSync(filePath, 
 `{
-  "name": "${fileName}",
+  "name": "${fileName.toLowerCase()}",
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",

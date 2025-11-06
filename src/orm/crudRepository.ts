@@ -1,6 +1,5 @@
 import { eq, sql } from "drizzle-orm";
 import { generateSchemaFromEntity } from "./entityMapper.js";
-import { Pool } from "pg";
 import { App } from "../core/app.js";
 
 export class CrudRepository<T extends { id: any }> {
@@ -15,25 +14,89 @@ export class CrudRepository<T extends { id: any }> {
   private async ensureTableExists() {
     const tableName = this.table[Symbol.for("drizzle:Name")];
 
+    const existsResult = await this.db.execute(
+      sql.raw(`SELECT to_regclass('public."${tableName}"') AS exists;`)
+    );
+
+    const tableExists =
+      Array.isArray(existsResult.rows) &&
+      existsResult.rows.length > 0 &&
+      existsResult.rows[0].exists !== null;
+
+    if (tableExists) {
+      return;
+    }
+
     const columns = Object.values(this.table[Symbol.for("drizzle:Columns")])
       .map((col: any) => {
+        const name = `"${col.name}"`;
+
         let sqlType = "TEXT";
-        if (col.columnType === "PgSerial") sqlType = "SERIAL";
-        else if (col.columnType === "PgVarchar")
-          sqlType = `VARCHAR(${col.length})`;
+        switch (col.columnType) {
+          case "PgSerial":
+            sqlType = "SERIAL";
+            break;
+          case "PgVarchar":
+            sqlType = `VARCHAR(${col.length || 255})`;
+            break;
+          case "PgInteger":
+            sqlType = "INTEGER";
+            break;
+          case "PgSmallInt":
+            sqlType = "SMALLINT";
+            break;
+          case "PgBigInt":
+            sqlType = "BIGINT";
+            break;
+          case "PgBoolean":
+            sqlType = "BOOLEAN";
+            break;
+          case "PgTimestamp":
+            sqlType = "TIMESTAMP";
+            break;
+          case "PgNumeric":
+            if (col.precision && col.scale) {
+              sqlType = `NUMERIC(${col.precision}, ${col.scale})`;
+            } else {
+              sqlType = "NUMERIC";
+            }
+            break;
+          case "PgJson":
+            sqlType = "JSON";
+            break;
+          case "PgJsonb":
+            sqlType = "JSONB";
+            break;
+          case "PgText":
+            sqlType = "TEXT";
+            break;
+        }
 
-        const unique = col.unique ? "UNIQUE" : "";
-        const primary = col.primary ? "PRIMARY KEY" : "";
         const notNull = col.notNull || col.primary ? "NOT NULL" : "";
-        const defaultValue =
-          col.default !== undefined ? `DEFAULT '${col.default}'` : "";
+        const unique = col.unique || col.uniqueFlag ? "UNIQUE" : "";
+        const primary = col.primary ? "PRIMARY KEY" : "";
 
-        return `"${col.name}" ${sqlType} ${notNull} ${unique} ${defaultValue} ${primary}`.trim();
+        let defaultValue = "";
+        if (col.default !== undefined && col.default !== null) {
+          const def = col.default;
+          if (def instanceof Date) {
+            defaultValue = `DEFAULT '${def.toISOString()}'`;
+          } else if (typeof def === "string") {
+            defaultValue = `DEFAULT '${def.replace(/'/g, "''")}'`;
+          } else {
+            defaultValue = `DEFAULT ${def}`;
+          }
+        }
+
+        return [name, sqlType, notNull, unique, defaultValue, primary]
+          .filter(Boolean)
+          .join(" ");
       })
-      .join(", ");
+      .join(",\n  ");
 
-    const createTableSQL = `CREATE TABLE IF NOT EXISTS "${tableName}" (${columns});`;
-    await this.db.execute(createTableSQL);
+    const createTableSQL = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n  ${columns}\n);`;
+    console.log("Creating table if not exists:", createTableSQL);
+    await this.db.execute(sql.raw(createTableSQL));
   }
 
   private unwrapRows(result: any): any[] {
@@ -62,8 +125,7 @@ export class CrudRepository<T extends { id: any }> {
       .where(eq(idColumn, id));
 
     const rows = this.unwrapRows(result);
-    if (rows.length === 0) return null;
-    return new this.entityClass(rows[0]);
+    return rows.length > 0 ? new this.entityClass(rows[0]) : null;
   }
 
   async findByField(field: keyof T, value: any): Promise<T[]> {
@@ -79,6 +141,17 @@ export class CrudRepository<T extends { id: any }> {
   async save(entity: T): Promise<T> {
     const data = { ...entity };
     delete (data as any).id;
+
+    for (const [key, value] of Object.entries(data)) {
+      const type = Reflect.getMetadata(
+        "design:type",
+        this.entityClass.prototype,
+        key
+      );
+      if (type && type.name === "Date" && typeof value === "string") {
+        (data as any)[key] = new Date(value);
+      }
+    }
 
     const result = await this.db.insert(this.table).values(data).returning();
     const rows = this.unwrapRows(result);
@@ -96,8 +169,7 @@ export class CrudRepository<T extends { id: any }> {
       .returning();
 
     const rows = this.unwrapRows(result);
-    if (rows.length === 0) return null;
-    return new this.entityClass(rows[0]);
+    return rows.length > 0 ? new this.entityClass(rows[0]) : null;
   }
 
   async delete(id: number): Promise<boolean> {
@@ -113,29 +185,32 @@ export class CrudRepository<T extends { id: any }> {
     return rows.length > 0;
   }
 
-  async query(queryText: string, params?: any[] | Record<string, any>): Promise<any[]> {
-  let finalQuery = queryText;
+  async query(
+    queryText: string,
+    params?: any[] | Record<string, any>
+  ): Promise<any[]> {
+    let finalQuery = queryText;
 
-  if (Array.isArray(params)) {
-    params.forEach((p, i) => {
-      const safeValue =
-        typeof p === "string"
-          ? `'${p.replace(/'/g, "''")}'`
-          : p?.toString() ?? "NULL";
-      finalQuery = finalQuery.replace(`$${i + 1}`, safeValue);
-    });
-  } else if (typeof params === "object" && params !== null) {
-    for (const [key, rawValue] of Object.entries(params)) {
-      const safeValue =
-        typeof rawValue === "string"
-          ? `'${rawValue.replace(/'/g, "''")}'`
-          : rawValue?.toString() ?? "NULL";
-      const regex = new RegExp(`:${key}\\b`, "g");
-      finalQuery = finalQuery.replace(regex, safeValue);
+    if (Array.isArray(params)) {
+      params.forEach((p, i) => {
+        const safeValue =
+          typeof p === "string"
+            ? `'${p.replace(/'/g, "''")}'`
+            : p?.toString() ?? "NULL";
+        finalQuery = finalQuery.replace(`$${i + 1}`, safeValue);
+      });
+    } else if (typeof params === "object" && params !== null) {
+      for (const [key, rawValue] of Object.entries(params)) {
+        const safeValue =
+          typeof rawValue === "string"
+            ? `'${rawValue.replace(/'/g, "''")}'`
+            : rawValue?.toString() ?? "NULL";
+        const regex = new RegExp(`:${key}\\b`, "g");
+        finalQuery = finalQuery.replace(regex, safeValue);
+      }
     }
-  }
 
-  const result = await this.db.execute(sql.raw(finalQuery));
-  return this.unwrapRows(result);
-}
+    const result = await this.db.execute(sql.raw(finalQuery));
+    return this.unwrapRows(result);
+  }
 }
